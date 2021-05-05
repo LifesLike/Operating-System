@@ -97,6 +97,7 @@ ku_pte* ku_mmu_deQueue(ku_mmu_queue* pq) {
 
 ku_mmu_PCB* ku_mmu_create_process(char pid);
 int ku_mmu_findFreePhysicalPage();
+int ku_mmu_findFreePhysicalPage_forPCB();
 int ku_mmu_swap_out();
 int ku_mmu_swap_in(unsigned char pte);
 
@@ -108,33 +109,35 @@ char* ku_mmu_pmem_free_list; // physical memory free list
 char* ku_mmu_smem_free_list; // swap space free list
 
 int ku_mmu_pmem_free_list_idx_size;
-int smem_free_list_idx_size;
+int ku_mmu_smem_free_list_idx_size;
 
 ku_mmu_list ku_mmu_running_process; // list of currently running processes
 ku_mmu_queue ku_mmu_swappable_page;
 
 
 void* ku_mmu_init(unsigned int pmem_size, unsigned int swap_size) {
-    ku_mmu_pmemBaseAddr = malloc(pmem_size); // physical memory
-    ku_mmu_smemBaseAddr = malloc(swap_size); // swap space
+    // ku_mmu_pmemBaseAddr = malloc(pmem_size); // physical memory
+    // ku_mmu_smemBaseAddr = malloc(swap_size); // swap space
+    ku_mmu_pmemBaseAddr = (char*) calloc(1, pmem_size);
+    ku_mmu_smemBaseAddr = (char*) calloc(1, swap_size);
 
     if (ku_mmu_pmemBaseAddr == NULL) {
         return 0;
     }
 
     ku_mmu_pmem_free_list_idx_size = pmem_size / ku_mmu_PAGE_SIZE;
-    smem_free_list_idx_size = swap_size / ku_mmu_PAGE_SIZE;
+    ku_mmu_smem_free_list_idx_size = swap_size / ku_mmu_PAGE_SIZE;
 
     if (ku_mmu_pmem_free_list_idx_size > ku_mmu_MAX_PMEM_IDX) {
         ku_mmu_pmem_free_list_idx_size = ku_mmu_MAX_PMEM_IDX;
     }
-    if (smem_free_list_idx_size > ku_mmu_MAX_SMEM_IDX) {
-        smem_free_list_idx_size = ku_mmu_MAX_SMEM_IDX;
+    if (ku_mmu_smem_free_list_idx_size > ku_mmu_MAX_SMEM_IDX) {
+        ku_mmu_smem_free_list_idx_size = ku_mmu_MAX_SMEM_IDX;
     }
 
     ku_mmu_pmem_free_list = (char*) calloc(sizeof(char), ku_mmu_pmem_free_list_idx_size);
     ku_mmu_pmem_free_list[0] = 1; // Occupied by OS
-    ku_mmu_smem_free_list = (char*) calloc(sizeof(char), smem_free_list_idx_size);
+    ku_mmu_smem_free_list = (char*) calloc(sizeof(char), ku_mmu_smem_free_list_idx_size);
     ku_mmu_smem_free_list[0] = 1; // don't use
 
     ku_mmu_listInit(&ku_mmu_running_process);
@@ -159,6 +162,7 @@ int ku_run_proc(char pid, struct ku_pte** ku_cr3) {
 }
 
 int ku_page_fault(char pid, char va) {
+    
     ku_mmu_PCB* cur_node = ku_mmu_listSearch(&ku_mmu_running_process, pid);
     if (cur_node == NULL) {
         return -1;
@@ -231,19 +235,23 @@ int ku_page_fault(char pid, char va) {
 
 ku_mmu_PCB* ku_mmu_create_process(char pid) {
     // 피지컬 메모리에 pcb 추가하는거 구현해야됨
-    int new_PFN_idx = ku_mmu_findFreePhysicalPage();
+    int new_PFN_idx = ku_mmu_findFreePhysicalPage_forPCB();
     if (new_PFN_idx == -1) {
         new_PFN_idx = ku_mmu_swap_out();
         if (new_PFN_idx == -1) {
             return NULL;
         }
+        return ku_mmu_create_process(pid);
     }
-    ku_mmu_pmem_free_list[new_PFN_idx] = 1;
 
+    for (int i = 0; i < 2; i++) {
+        ku_mmu_pmem_free_list[new_PFN_idx + i] = 1;
+    }
+    
     ku_mmu_PCB* new_process = ku_mmu_listInsert(&ku_mmu_running_process, pid);
-    new_process->pdbr = (ku_pte*)(ku_mmu_pmemBaseAddr + new_PFN_idx*ku_mmu_PAGE_SIZE);
-    // printf("base addr: %d, pdbr: %d\n", ku_mmu_pmemBaseAddr, newProcess->pdbr);
+    new_process->pdbr = (ku_pte*)(ku_mmu_pmemBaseAddr + new_PFN_idx*ku_mmu_PAGE_SIZE); // 여기서부터 다시
 
+    // printf("size: %d\n", sizeof(new_process));
     return new_process;
 }
 
@@ -256,8 +264,18 @@ int ku_mmu_findFreePhysicalPage() {
     return -1; // no free page found
 }
 
+int ku_mmu_findFreePhysicalPage_forPCB() {
+    for (int i = 1; i < ku_mmu_pmem_free_list_idx_size - 5; i++) {
+        if (ku_mmu_pmem_free_list[i] == 0 && ku_mmu_pmem_free_list[i + 1] == 0) {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
 int ku_mmu_findFreeSwappingPage() {
-    for (int i = 1; i < smem_free_list_idx_size; i++) {
+    for (int i = 1; i < ku_mmu_smem_free_list_idx_size; i++) {
         if (ku_mmu_smem_free_list[i] == 0) {
             return i;
         }
