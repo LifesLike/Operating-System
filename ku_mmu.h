@@ -265,6 +265,9 @@ ku_mmu_PCB* ku_mmu_create_process(char pid) {
             return NULL;
         }
     }
+
+    ku_mmu_pmem_free_list[new_PFN_begin] = 1;
+
     int new_PFN_end = ku_mmu_findFreePhysicalPage();
     if (new_PFN_end == -1) {
         new_PFN_end = ku_mmu_swap_out();
@@ -272,6 +275,9 @@ ku_mmu_PCB* ku_mmu_create_process(char pid) {
             return NULL;
         }
     }
+
+    ku_mmu_pmem_free_list[new_PFN_end] = 1;
+
     int new_PFN_pdbr = ku_mmu_findFreePhysicalPage();
     if (new_PFN_pdbr == -1) {
         new_PFN_pdbr = ku_mmu_swap_out();
@@ -280,27 +286,24 @@ ku_mmu_PCB* ku_mmu_create_process(char pid) {
         }
     }
 
-    ku_mmu_pmem_free_list[new_PFN_begin] = 1;
-    ku_mmu_pmem_free_list[new_PFN_end] = 1;
     ku_mmu_pmem_free_list[new_PFN_pdbr] = 1;
-
 
 
     ku_mmu_PCB* new_process = ku_mmu_listInsert(&ku_mmu_running_process, pid);
     new_process->pdbr = (ku_pte*)(ku_mmu_pmemBaseAddr + new_PFN_pdbr*ku_mmu_PAGE_SIZE);
+    new_process->pfn_begin = new_PFN_begin;
+    new_process->pfn_end = new_PFN_end;
 
-    //
-//     long long addr = new_process;
-//     unsigned int first_half = (addr >> 32);
-//     unsigned int second_half = (addr << 32)>>32;
-//     // printf("new process: %ld\n", addr);
-//     // printf("first_half: %d\n", first_half);
-//     // printf("second_half: %d\n", second_half);
+    long long addr = (long long) new_process;
+    unsigned int first_half = (addr >> 32);
+    unsigned int second_half = (addr << 32)>>32;
+    // printf("new process: %ld\n", addr);
+    // printf("first_half: %d\n", first_half);
+    // printf("second_half: %d\n", second_half);
 
-//    *(ku_mmu_pmemBaseAddr + new_PFN_begin*ku_mmu_PAGE_SIZE) = first_half;
-//     *(ku_mmu_pmemBaseAddr + new_PFN_end*ku_mmu_PAGE_SIZE) = second_half;
+   *(ku_mmu_pmemBaseAddr + new_PFN_begin*ku_mmu_PAGE_SIZE) = first_half;
+    *(ku_mmu_pmemBaseAddr + new_PFN_end*ku_mmu_PAGE_SIZE) = second_half;
 
-    //
     return new_process;
 }
 
