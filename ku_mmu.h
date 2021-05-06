@@ -216,7 +216,7 @@ int ku_page_fault(char pid, char va) {
         ku_mmu_enQueue(&ku_mmu_demanded_page, cur_pte);
     }
 
-    // check present
+    // check present bit
     mask = 0b00000001;
     unsigned char present_bit = cur_pte->entry & mask;
     if (present_bit == 0) {
@@ -231,28 +231,6 @@ int ku_page_fault(char pid, char va) {
 
     return 0;
 }
-
-// ku_mmu_PCB* ku_mmu_create_process(char pid) {
-//     // 피지컬 메모리에 pcb 추가하는거 구현해야됨
-//     int new_PFN_idx = ku_mmu_findFreePhysicalPage_forPCB();
-//     if (new_PFN_idx == -1) {
-//         new_PFN_idx = ku_mmu_swap_out();
-//         if (new_PFN_idx == -1) {
-//             return NULL;
-//         }
-//         return ku_mmu_create_process(pid);
-//     }
-
-//     for (int i = 0; i < 2; i++) {
-//         ku_mmu_pmem_free_list[new_PFN_idx + i] = 1;
-//     }
-    
-//     ku_mmu_PCB* new_process = ku_mmu_listInsert(&ku_mmu_running_process, pid);
-//     new_process->pdbr = (ku_pte*)(ku_mmu_pmemBaseAddr + new_PFN_idx*ku_mmu_PAGE_SIZE); // 여기서부터 다시
-
-//     printf("size: %d\n", sizeof(new_process));
-//     return new_process;
-// }
 
 ku_mmu_PCB* ku_mmu_create_process(char pid) {
     int new_PFN_begin = ku_mmu_findFreePhysicalPage();
@@ -293,12 +271,9 @@ ku_mmu_PCB* ku_mmu_create_process(char pid) {
 
     long long addr = (long long) new_process;
     unsigned int first_half = (addr >> 32);
-    unsigned int second_half = (addr << 32)>>32;
-    // printf("new process: %ld\n", addr);
-    // printf("first_half: %d\n", first_half);
-    // printf("second_half: %d\n", second_half);
+    unsigned int second_half = (addr << 32) >> 32;
 
-   *(ku_mmu_pmemBaseAddr + new_PFN_begin*ku_mmu_PAGE_SIZE) = first_half;
+    *(ku_mmu_pmemBaseAddr + new_PFN_begin*ku_mmu_PAGE_SIZE) = first_half;
     *(ku_mmu_pmemBaseAddr + new_PFN_end*ku_mmu_PAGE_SIZE) = second_half;
 
     return new_process;
