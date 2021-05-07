@@ -168,10 +168,8 @@ int ku_page_fault(char pid, char va) {
     }
 
     ku_pte* cur_pdbr = cur_node->pdbr;
-    // printf("pdbr: %d\n", curPdbr); // test
-    unsigned char mask = 0b11000000;
+    unsigned char mask = 0b11000000; // PD_MASK
     ku_pte* cur_pde = cur_pdbr + ((va & mask) >> 6);
-    // printf("pde: %d\n", curPde); // test
     if (cur_pde->entry == 0) {
         int new_PFN_idx = ku_mmu_findFreePhysicalPage();
         if (new_PFN_idx == -1) {
@@ -185,9 +183,8 @@ int ku_page_fault(char pid, char va) {
         cur_pde->entry = (new_PFN_idx << 2) | 1;
     }
     
-    mask = 0b00110000;
+    mask = 0b00110000; // PMD_MASK
     ku_pte* cur_pmde = (ku_pte*)(ku_mmu_pmemBaseAddr + ((cur_pde->entry >> 2) * ku_mmu_PAGE_SIZE) + ((va & mask) >> 4));
-    // printf("pmde: %d\n", curPmde); // test
     if (cur_pmde->entry == 0) {
         int new_PFN_idx = ku_mmu_findFreePhysicalPage();
         if (new_PFN_idx == -1) {
@@ -200,9 +197,8 @@ int ku_page_fault(char pid, char va) {
         cur_pmde->entry = (new_PFN_idx << 2) | 1;
     }
 
-    mask = 0b00001100;
+    mask = 0b00001100; // PT_MASK
     ku_pte* cur_pte = (ku_pte*)(ku_mmu_pmemBaseAddr + ((cur_pmde->entry >> 2) * ku_mmu_PAGE_SIZE) + ((va & mask) >> 2));
-    // printf("pte: %d\n", curPte); // test
     if (cur_pte->entry == 0) {
         int new_PFN_idx = ku_mmu_findFreePhysicalPage();
         if (new_PFN_idx == -1) {
@@ -300,11 +296,11 @@ int ku_mmu_findFreeSwappingPage() {
 
 int ku_mmu_swap_out() {
     ku_pte* target_pte = ku_mmu_deQueue(&ku_mmu_demanded_page);
-    if (target_pte == NULL) { // in case of too small physical memory
+    if (target_pte == NULL) { // in case of too small physical memory was allocated
         return -1;
     }
     int new_SFN_idx = ku_mmu_findFreeSwappingPage();
-    if (new_SFN_idx == -1) {
+    if (new_SFN_idx == -1) { // in case of too small swap area was allocated
         return -1;
     }
 
@@ -318,7 +314,6 @@ int ku_mmu_swap_out() {
 
 int ku_mmu_swap_in(unsigned char pte) {
     unsigned char swap_space_offset = (pte & 0b11111110) >> 1;
-    // printf("swapspace offset: %d\n", swap_space_offset);
 
     int new_PFN_idx = ku_mmu_findFreePhysicalPage();
     if (new_PFN_idx == -1) {
