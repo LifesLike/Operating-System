@@ -68,8 +68,7 @@ int ku_mmu_queueIsEmpty(ku_mmu_queue* pq) {
         return 0;
     }
 }
-
-ku_pte* ku_mmu_enQueue(ku_mmu_queue* pq, ku_pte* pte) {
+void ku_mmu_enQueue(ku_mmu_queue* pq, ku_pte* pte) {
     ku_mmu_queue_node* newNode = (ku_mmu_queue_node*)malloc(sizeof(ku_mmu_queue_node));
     newNode->next = NULL;
     newNode->pte = pte;
@@ -318,6 +317,9 @@ int ku_mmu_swap_in(unsigned char pte) {
     int new_PFN_idx = ku_mmu_findFreePhysicalPage();
     if (new_PFN_idx == -1) {
         new_PFN_idx = ku_mmu_swap_out();
+        if (new_PFN_idx == -1) {
+            return -1;
+        }
     }
     ku_mmu_smem_free_list[swap_space_offset] = 0;
 
