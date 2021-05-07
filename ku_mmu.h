@@ -226,8 +226,9 @@ int ku_page_fault(char pid, char va) {
         }
         ku_mmu_pmem_free_list[new_PFN_idx] = 1;
         cur_pte->entry = (new_PFN_idx << 2) | 1;
+        ku_mmu_enQueue(&ku_mmu_demanded_page, cur_pte);
     }
- 
+
 
     return 0;
 }
