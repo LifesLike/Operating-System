@@ -102,8 +102,8 @@ int ku_mmu_swap_out();
 int ku_mmu_swap_in(unsigned char pte);
 
 
-char* ku_mmu_pmem_base_addr; // physical memory base address
-char* ku_mmu_swap_space_base_addr; // swap space base address
+ku_pte* ku_mmu_pmem_base_addr; // physical memory base address
+ku_pte* ku_mmu_swap_space_base_addr; // swap space base address
 
 char* ku_mmu_pmem_free_list; // physical memory free list
 char* ku_mmu_swap_space_free_list; // swap space free list
@@ -116,8 +116,8 @@ ku_mmu_queue ku_mmu_demanded_page; // queue of pages that can be swap out
 
 
 void* ku_mmu_init(unsigned int pmem_size, unsigned int swap_size) {
-    ku_mmu_pmem_base_addr = (char*) calloc(1, pmem_size);
-    ku_mmu_swap_space_base_addr = (char*) calloc(1, swap_size);
+    ku_mmu_pmem_base_addr = (ku_pte*) calloc(1, pmem_size);
+    ku_mmu_swap_space_base_addr = (ku_pte*) calloc(1, swap_size);
 
     if (ku_mmu_pmem_base_addr == NULL) {
         return 0;
@@ -269,8 +269,8 @@ ku_mmu_PCB* ku_mmu_create_process(char pid) {
     unsigned int first_half = (addr >> 32);
     unsigned int second_half = (addr << 32) >> 32;
 
-    *(ku_mmu_pmem_base_addr + new_PFN_begin*ku_mmu_PAGE_SIZE) = first_half;
-    *(ku_mmu_pmem_base_addr + new_PFN_end*ku_mmu_PAGE_SIZE) = second_half;
+    *((char*)ku_mmu_pmem_base_addr + new_PFN_begin*ku_mmu_PAGE_SIZE) = first_half;
+    *((char*)ku_mmu_pmem_base_addr + new_PFN_end*ku_mmu_PAGE_SIZE) = second_half;
 
     return new_process;
 }
