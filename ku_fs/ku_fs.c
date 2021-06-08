@@ -24,9 +24,11 @@ int is_mapped_ino(char* bitmap, int inode_num);
 int find_free_bitmap_idx(char* bitmap);
 int write_file(char* file_name, unsigned int byte);
 int read_file(char* file_name, unsigned int byte);
+int delete_file(char* file_name);
 
 
 int main(int argc, char** argv) {
+    
 
     if (argc != 2) {
         printf("ku_fs: Wrong number of arguments\n");
@@ -67,30 +69,21 @@ int main(int argc, char** argv) {
             read_file(title, byte);
         }
         else if (mode == 'd') {
-
+            delete_file(title);
         }
 
     }
 
+    // printf("eof\n");
 
-
-
-    // unsigned int offset = 8 * BLOCK_SIZE;
-    // inode* root = (partition + offset);
-    // printf("%d\n", root->fsize);
-
-    printf("start\n");
-
-
-
-    // for (int i = 0; i < 4096*64; i++) {
-    //     printf("%.2x ", *((unsigned char*)partition + i));        
-    //     // printf("%.2x ", *(unsigned char*)(partition + i));
-    //     if (*((unsigned char*)partition + i) != 0) {
-    //         printf("here in i: %d\n", i);
-    //     }
-    //     fflush(stdout);
-    // }
+    for (int i = 0; i < 4096*64; i++) {
+        printf("%.2x ", *((unsigned char*)partition + i));        
+        // printf("%.2x ", *(unsigned char*)(partition + i));
+        // if (*((unsigned char*)partition + i) != 0) {
+        //     printf("here in i: %d\n", i);
+        // }
+        fflush(stdout);
+    }
     // printf("fin\n");
 
     return 0;
@@ -129,7 +122,7 @@ int ku_fs_init() {
     *(inode*)(partition + root_inode_offset) = root_inode;
     // *(inode*)(partition+data_block_offset) = root_inode;
 
-    printf("init completed\n");
+    // printf("init completed\n");
 
     return 0;
 }
@@ -187,7 +180,6 @@ int write_file(char* file_name, unsigned int byte) {
     for (int i = 0; i < BLOCK_SIZE; i+= 4) {
         if (*(root_data_block+i) != 0) {
             if (strcmp((root_data_block+i + 1), file_name) == 0) {
-               
                 error_flag = 1;
                 break;
             }
@@ -214,13 +206,17 @@ int write_file(char* file_name, unsigned int byte) {
                         error_flag = 2;
                         break;
                     }
+                    if (pointer_cnt == 12) {
+                        error_flag = 2;
+                        break;
+                    }
                     set_bitmap(data_bitmap, new_data_block_idx); // 추가
                     new_inode.pointer[pointer_cnt] = new_data_block_idx;
                     pointer_cnt++;
                     new_inode.blocks = pointer_cnt;
-                    remain_byte -= BLOCK_SIZE;
+                    remain_byte = (remain_byte <= BLOCK_SIZE)? 0 : (remain_byte - BLOCK_SIZE);
                 }
-                
+
                 *(inode*)(partition + new_inode_offset) = new_inode;
                 if (error_flag) {
                     break;
@@ -237,12 +233,12 @@ int write_file(char* file_name, unsigned int byte) {
                         int data_block_no = new_inode.pointer[j];
                         int data_block_offset = data_block_no * BLOCK_SIZE + 8*BLOCK_SIZE;
                         char* data_block = (partition + data_block_offset);
-                        int smaller_byte = (remain_byte < BLOCK_SIZE)? remain_byte : BLOCK_SIZE-1;
+                        int smaller_byte = (remain_byte <= BLOCK_SIZE)? remain_byte : BLOCK_SIZE;
 
                         for (int ptr = 0; ptr < smaller_byte; ptr++) {
                             *(data_block + ptr) = file_name[0];
                         }
-                        *(data_block + smaller_byte) = '\0';
+                        // *(data_block + smaller_byte) = '\0';
                         remain_byte -= smaller_byte;
                     }
                 }
@@ -269,6 +265,12 @@ int write_file(char* file_name, unsigned int byte) {
                 del_inode->pointer[i] = 0;
             }
             clear_bitmap(inode_bitmap, new_inode_offset);
+
+            char* del_block = (char*)(del_inode);
+            for (int i = 0; i < 256; i++) {
+                *(del_block + i) = 0;
+            }
+                
             printf("No space\n");
         }
         else if (error_flag == 3) {
@@ -290,44 +292,150 @@ int read_file(char* file_name, unsigned int byte) {
     char* root_data_block = (partition + data_block_offset);
 
     // 동일한 이름 파일 여부
-    for (int i = 0; i < BLOCK_SIZE; i+= 4) {
+    for (int i = 0; i < BLOCK_SIZE; i+=4) {
         if (*(root_data_block+i) != 0) {
             // printf("%s\n", root_data_block+i+1);
             if (strcmp((root_data_block+i + 1), file_name) == 0) {
                 int target_file_inode_num = *(root_data_block+i);
                 int target_file_inode_offset = target_file_inode_num * sizeof(inode) + 3*BLOCK_SIZE;
                 inode* target_inode = (partition + target_file_inode_offset);
-                if (target_inode->fsize >= byte) {
-                    if (byte >= BLOCK_SIZE) {
 
-                    }
-                    else {
-                        int data_block_num = target_inode->pointer[0];
-                        int data_block_offset = data_block_num * BLOCK_SIZE + 8*BLOCK_SIZE;
-                        char* data_block = partition + data_block_offset;
-                        for (int j = 0; j < byte; j++) {
-                            printf("%c", *(data_block + j));
+                if (target_inode->fsize >= byte && byte > BLOCK_SIZE || 
+                        target_inode->fsize < byte && target_inode->fsize > BLOCK_SIZE) {
+                    
+                    unsigned int remain_byte = (target_inode->fsize > byte)? byte : target_inode->fsize;
+                    while (remain_byte) {
+                        for (int j = 0; j < target_inode->blocks; j++) {
+                            if (remain_byte == 0) {
+                                break;
+                            }
+                            int data_block_num = target_inode->pointer[j];
+                            int data_block_offset = data_block_num * BLOCK_SIZE + 8*BLOCK_SIZE;
+                            char* data_block = partition + data_block_offset;
+                            int size = (remain_byte > BLOCK_SIZE)? BLOCK_SIZE : remain_byte;
+
+                            for (int p = 0; p < size; p++) {
+                                printf("%c", *(data_block + p));
+                            }
+
+                            int smaller_byte = (remain_byte <= BLOCK_SIZE)? remain_byte : BLOCK_SIZE;
+                            remain_byte -= smaller_byte;
                         }
+                           
                     }
                 }
-                else if (target_inode->fsize < byte) {
-                    if (target_inode->fsize >= BLOCK_SIZE) {
-
-                    }
-                    else {
-                        int data_block_num = target_inode->pointer[0];
-                        int data_block_offset = data_block_num * BLOCK_SIZE + 8*BLOCK_SIZE;
-                        char* data_block = partition + data_block_offset;
-                        for (int j = 0; j < target_inode->fsize; j++) {
-                            printf("%c", *(data_block + j));
-                        }
+                else {
+                    unsigned int remain_byte = (target_inode->fsize > byte)? byte : target_inode->fsize;
+                    int data_block_num = target_inode->pointer[0];
+                    int data_block_offset = data_block_num * BLOCK_SIZE + 8*BLOCK_SIZE;
+                    char* data_block = partition + data_block_offset;
+                    for (int j = 0; j < remain_byte; j++) {
+                        printf("%c", *(data_block + j));
                     }
                 }
+
+                // if (target_inode->fsize >= byte) {
+                //     if (byte > BLOCK_SIZE) {
+                //         unsigned int remain_byte = byte;
+
+                //         while (remain_byte) {
+                //             for (int j = 0; j < target_inode->blocks; j++) {
+                //                 if (remain_byte == 0) {
+                //                     break;
+                //                 }
+                //                 int data_block_num = target_inode->pointer[j];
+                //                 int data_block_offset = data_block_num * BLOCK_SIZE + 8*BLOCK_SIZE;
+                //                 char* data_block = partition + data_block_offset;
+                //                 int size = (remain_byte > BLOCK_SIZE)? BLOCK_SIZE : remain_byte;
+
+                //                 for (int p = 0; p < size; p++) {
+                //                     printf("%c", *(data_block + p));
+                //                 }
+
+                //                 int smaller_byte = (remain_byte <= BLOCK_SIZE)? remain_byte : BLOCK_SIZE;
+                //                 remain_byte -= smaller_byte;
+                //             }
+                           
+                //         }
+                //     }
+                //     else {
+                //         int data_block_num = target_inode->pointer[0];
+                //         int data_block_offset = data_block_num * BLOCK_SIZE + 8*BLOCK_SIZE;
+                //         char* data_block = partition + data_block_offset;
+                //         for (int j = 0; j < byte; j++) {
+                //             printf("%c", *(data_block + j));
+                //         }
+                //     }
+                // }
+                // else if (target_inode->fsize < byte) {
+                //     if (target_inode->fsize > BLOCK_SIZE) {
+                //         unsigned int remain_byte = target_inode->fsize;
+                //         while (remain_byte) {
+                //             for (int j = 0; j < target_inode->blocks; j++) {
+                //                 if (remain_byte == 0) {
+                //                     break;
+                //                 }
+                //                 int data_block_num = target_inode->pointer[j];
+                //                 int data_block_offset = data_block_num * BLOCK_SIZE + 8*BLOCK_SIZE;
+                //                 char* data_block = partition + data_block_offset;
+                //                 int size = (remain_byte > BLOCK_SIZE)? BLOCK_SIZE : remain_byte;
+
+                //                 for (int p = 0; p < size; p++) {
+                //                     printf("%c", *(data_block + p));
+                //                 }
+
+                //                 int smaller_byte = (remain_byte <= BLOCK_SIZE)? remain_byte : BLOCK_SIZE;
+                //                 remain_byte -= smaller_byte;
+                //             }
+                           
+                //         }
+                //     }
+                //     else {
+                //         int data_block_num = target_inode->pointer[0];
+                //         int data_block_offset = data_block_num * BLOCK_SIZE + 8*BLOCK_SIZE;
+                //         char* data_block = partition + data_block_offset;
+                //         for (int j = 0; j < target_inode->fsize; j++) {
+                //             printf("%c", *(data_block + j));
+                //         }
+                //     }
+                // }
                 printf("\n");
                 return 0;
             }
         }
     }
 
+    printf("No such file\n");
     return -1; // no such file
+}
+
+int delete_file(char* file_name) {
+    unsigned int root_inode_offset = 2 * sizeof(inode) + 3 * BLOCK_SIZE;
+    inode* root = (partition + root_inode_offset);
+    unsigned int data_block_idx = root->pointer[0];
+    unsigned int data_block_offset = data_block_idx * BLOCK_SIZE + 8*BLOCK_SIZE;
+    char* root_data_block = (partition + data_block_offset);
+
+    for (int i = 0; i < BLOCK_SIZE; i+=4) {
+        if (*(root_data_block+i) != 0) {
+            if (strcmp((root_data_block+i + 1), file_name) == 0) {
+                int target_file_inode_num = *(root_data_block+i); //삭제해야되는 inode 번호
+                int target_file_inode_offset = target_file_inode_num * sizeof(inode) + 3*BLOCK_SIZE;
+                inode* target_inode = (partition + target_file_inode_offset);
+
+                for (int inum = 0; inum < target_inode->blocks; inum++) {
+                    int del_data_inode_num = target_inode->pointer[inum];
+                    target_inode->pointer[inum] = 0;
+                    clear_bitmap(data_bitmap, del_data_inode_num);
+                }
+                clear_bitmap(inode_bitmap, target_file_inode_num);
+                *(root_data_block+i) = 0;
+
+                return 0;
+            }
+        }
+    }
+
+    printf("No such file\n");
+    return -1;
 }
