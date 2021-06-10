@@ -13,12 +13,6 @@ typedef struct __inode {
     char __dummy__[200];
 } inode;
 
-void* partition;
-char* inode_bitmap;
-char* data_bitmap;
-inode* root_inode;
-char* root_data_block;
-
 int ku_fs_init();
 void set_bitmap(char* bitmap, int inode_num);
 void clear_bitmap(char* bitmap, int inode_num);
@@ -27,6 +21,12 @@ int find_free_bitmap_idx(char* bitmap);
 int write_file(char* file_name, unsigned int byte);
 int read_file(char* file_name, unsigned int byte);
 int delete_file(char* file_name);
+
+void* partition;    // 초기화된 파일 시스템 위치
+char* inode_bitmap; // inode 비트맵 위치
+char* data_bitmap;  // data 비트맵 위치
+inode* root_inode;  // 루트 inode
+char* root_data_block;  // 루트 inode 데이터가 저장된 위치
 
 
 int main(int argc, char** argv) {
@@ -62,7 +62,6 @@ int main(int argc, char** argv) {
             tok = strtok(NULL, " ");
             byte = atoi(tok);
         }
-
         if (mode == 'w') {
             write_file(title, byte);
         }
@@ -74,11 +73,10 @@ int main(int argc, char** argv) {
         }
 
     }
-
-
-    // for (int i = 0; i < 4096*64; i++) {
-    //     printf("%.2x ", *((unsigned char*)partition + i));        
-    // }
+    // eof
+    for (int i = 0; i < 4096*64; i++) {
+        printf("%.2x ", *((unsigned char*)partition + i));        
+    }
 
     return 0;
 }
@@ -101,20 +99,6 @@ int ku_fs_init() {
 
     // inode offset
     unsigned int root_inode_offset = inode_idx * sizeof(inode) + 3 * BLOCK_SIZE;
-    // inode root_inode;
-    // root_inode.fsize = 4 * 80;
-    // root_inode.blocks = 1;
-
-    // int data_block_idx = find_free_bitmap_idx(data_bitmap);
-    // if (data_block_idx == -1) {
-    //     return -1;
-    // }
-    // set_bitmap(data_bitmap, data_block_idx);
-
-    // unsigned int data_block_offset = data_block_idx * BLOCK_SIZE + 8*BLOCK_SIZE;
-
-    // root_inode.pointer[0] = data_block_idx;
-    // *(inode*)(partition + root_inode_offset) = root_inode;
 
     root_inode = (partition + root_inode_offset);
     root_inode->fsize = 4 * 80;
@@ -125,10 +109,10 @@ int ku_fs_init() {
         return -1;
     }
     set_bitmap(data_bitmap, data_block_idx);
-    int data_block_offset = data_block_idx * BLOCK_SIZE + 8*BLOCK_SIZE;
     root_inode->pointer[0] = data_block_idx;
 
-    root_data_block = (partition + data_block_offset);
+    int data_block_offset = data_block_idx * BLOCK_SIZE + 8*BLOCK_SIZE;
+    root_data_block = (partition + data_block_offset); // 루트 디렉토리 데이터 블럭 실제 위치
 
     // printf("init completed\n");
 
@@ -175,12 +159,7 @@ int find_free_bitmap_idx(char* bitmap) {
 }
 
 int write_file(char* file_name, unsigned int byte) {
-    // unsigned int root_inode_offset = 2 * sizeof(inode) + 3 * BLOCK_SIZE; // 실제 파티션 블락 상에서의 위치
     unsigned int new_inode_offset; // 새로 할당할 inode 위치
-    // inode* root = (partition + root_inode_offset);
-    // unsigned int data_block_idx = root_inode->pointer[0];
-    // unsigned int data_block_offset = data_block_idx * BLOCK_SIZE + 8*BLOCK_SIZE;
-    // char* root_data_block = (partition + data_block_offset);
     int error_flag = 0;
 
     // 동일한 이름 파일 여부
@@ -203,8 +182,8 @@ int write_file(char* file_name, unsigned int byte) {
                     break;
                 }
                 new_inode_offset = new_inode_num * sizeof(inode) + 3 * BLOCK_SIZE;
-                inode new_inode;
-                new_inode.fsize = byte;
+                inode* new_inode = (partition + new_inode_offset);
+                new_inode->fsize = byte;
                 int pointer_cnt = 0;
                 unsigned int remain_byte = byte;
                 while (remain_byte) {
@@ -218,13 +197,13 @@ int write_file(char* file_name, unsigned int byte) {
                         break;
                     }
                     set_bitmap(data_bitmap, new_data_block_idx); // 추가
-                    new_inode.pointer[pointer_cnt] = new_data_block_idx;
+                    new_inode->pointer[pointer_cnt] = new_data_block_idx;
                     pointer_cnt++;
-                    new_inode.blocks = pointer_cnt;
+                    new_inode->blocks = pointer_cnt;
                     remain_byte = (remain_byte <= BLOCK_SIZE)? 0 : (remain_byte - BLOCK_SIZE);
+
                 }
 
-                *(inode*)(partition + new_inode_offset) = new_inode;
                 if (error_flag) {
                     break;
                 }
@@ -233,11 +212,11 @@ int write_file(char* file_name, unsigned int byte) {
 
                 // 파일 내용 쓰기
                 while (remain_byte) {
-                    for (int j = 0; j < new_inode.blocks; j++) {
+                    for (int j = 0; j < new_inode->blocks; j++) {
                         if (remain_byte == 0) {
                             break;
                         }
-                        int data_block_no = new_inode.pointer[j];
+                        int data_block_no = new_inode->pointer[j];
                         int data_block_offset = data_block_no * BLOCK_SIZE + 8*BLOCK_SIZE;
                         char* data_block = (partition + data_block_offset);
                         int smaller_byte = (remain_byte <= BLOCK_SIZE)? remain_byte : BLOCK_SIZE;
@@ -257,13 +236,13 @@ int write_file(char* file_name, unsigned int byte) {
         }
     }
     
-
     // 에러 발생
     if (error_flag) {
         if (error_flag == 1) {
             printf("Already exists\n");
         }
         else if (error_flag == 2) {
+            // 앞서 임시로 할당했던 데이터 초기화
             inode* del_inode = (partition + new_inode_offset);
             for (int i = 0; i < del_inode->blocks; i++) {
                 clear_bitmap(data_bitmap, del_inode->pointer[i]);
@@ -285,17 +264,10 @@ int write_file(char* file_name, unsigned int byte) {
         return -1;
     }
     
-    
     return 0;
 }
 
 int read_file(char* file_name, unsigned int byte) {
-    // unsigned int root_inode_offset = 2 * sizeof(inode) + 3 * BLOCK_SIZE;
-    // inode* root = (partition + root_inode_offset);
-    // unsigned int data_block_idx = root_inode->pointer[0];
-    // unsigned int data_block_offset = data_block_idx * BLOCK_SIZE + 8*BLOCK_SIZE;
-    // char* root_data_block = (partition + data_block_offset);
-
     // 동일한 이름 파일 여부
     for (int i = 0; i < BLOCK_SIZE; i+=4) {
         if (*(root_data_block+i) != 0) {
@@ -345,26 +317,21 @@ int read_file(char* file_name, unsigned int byte) {
     }
 
     printf("No such file\n");
-    return -1; // no such file
+    return -1; 
 }
 
 int delete_file(char* file_name) {
-    // unsigned int root_inode_offset = 2 * sizeof(inode) + 3 * BLOCK_SIZE;
-    // inode* root = (partition + root_inode_offset);
-    unsigned int data_block_idx = root_inode->pointer[0];
-    unsigned int data_block_offset = data_block_idx * BLOCK_SIZE + 8*BLOCK_SIZE;
-    char* root_data_block = (partition + data_block_offset);
-
+    // 파일 순회
     for (int i = 0; i < BLOCK_SIZE; i+=4) {
         if (*(root_data_block+i) != 0) {
             if (strcmp((root_data_block+i + 1), file_name) == 0) {
-                int target_file_inode_num = *(root_data_block+i); //삭제해야되는 inode 번호
+                int target_file_inode_num = *(root_data_block+i); //삭제해야 하는 inode 번호
                 int target_file_inode_offset = target_file_inode_num * sizeof(inode) + 3*BLOCK_SIZE;
                 inode* target_inode = (partition + target_file_inode_offset);
 
                 for (int inum = 0; inum < target_inode->blocks; inum++) {
                     int del_data_inode_num = target_inode->pointer[inum];
-                    target_inode->pointer[inum] = 0;
+                    // target_inode->pointer[inum] = 0;
                     clear_bitmap(data_bitmap, del_data_inode_num);
                 }
                 clear_bitmap(inode_bitmap, target_file_inode_num);
